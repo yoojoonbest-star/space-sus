@@ -1,0 +1,137 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Space Sus</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#101526;color:white;font-family:system-ui;text-align:center}
+h1{color:#62eaff;margin:12px}
+input,button{font-size:17px;padding:12px;margin:4px;border:0;border-radius:10px}
+button{background:#26a9e0;color:#07111e;font-weight:bold}
+input{width:125px;max-width:40%}
+#game{display:none}
+canvas{background:#172a40;border:3px solid #62eaff;border-radius:12px;width:95%;max-width:700px;touch-action:none}
+#players{padding:8px}
+.controls button{width:65px;height:55px}
+#status{padding:10px;color:#ffe66d}
+</style>
+</head>
+<body>
+<h1>🚀 SPACE SUS</h1>
+<div id="lobby">
+  <p>친구들과 하는 온라인 우주 추리 게임</p>
+  <input id="name" placeholder="닉네임" maxlength="15">
+  <button onclick="createRoom()">방 만들기</button>
+  <p><input id="code" placeholder="방 코드">
+  <button onclick="joinRoom()">참가</button></p>
+  <p id="message">2~6명으로 플레이해!</p>
+</div>
+<div id="game">
+  <h3 id="roomLabel"></h3>
+  <div id="status">친구를 기다리는 중...</div>
+  <canvas id="canvas" width="600" height="400"></canvas>
+  <div id="players"></div>
+  <button onclick="startGame()">게임 시작</button>
+  <button onclick="doTask()">🛠️ 미션</button>
+  <button onclick="meeting()">🚨 긴급회의</button>
+  <div class="controls">
+    <button onclick="move(0,-20)">⬆️</button><br>
+    <button onclick="move(-20,0)">⬅️</button>
+    <button onclick="move(0,20)">⬇️</button>
+    <button onclick="move(20,0)">➡️</button>
+  </div>
+  <div id="votes"></div>
+  <button onclick="resetGame()">다시 시작</button>
+</div>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket=io();
+const $=id=>document.getElementById(id);
+let myId=null,roomCode="",state=null,me=null;
+socket.on("connect",()=>myId=socket.id);
+socket.on("state",s=>{
+ state=s;
+ me=s.players.find(p=>p.id===myId);
+ if(!me)return;
+ $("lobby").style.display="none";
+ $("game").style.display="block";
+ $("roomLabel").textContent="방 코드: "+roomCode;
+ let role=me.role||"역할 비공개";
+ $("status").textContent=
+ s.phase==="lobby"?"친구가 들어오면 게임 시작!":
+ s.phase==="playing"?`내 역할: ${role} | 미션 ${me.tasks}/3`:
+ s.phase==="meeting"?"🚨 회의 중! 투표해!":
+ s.phase==="crewWin"?"🎉 크루원 승리!":
+ s.phase==="impWin"?"🔪 임포스터 승리!":s.phase;
+ $("players").innerHTML=s.players.map(p=>
+  `<span>${p.name}${p.alive?"":" 💀"} ${p.id===myId?"(나)":""}</span> `).join(" · ");
+ draw();
+ renderVotes();
+});
+function createRoom(){
+ socket.emit("createRoom",$("name").value||"Player",r=>{
+  if(r.error)return $("message").textContent=r.error;
+  roomCode=r.code;
+  $("code").value=roomCode;
+ });
+}
+function joinRoom(){
+ socket.emit("joinRoom",{code:$("code").value,name:$("name").value||"Player"},r=>{
+  if(r.error)return $("message").textContent=r.error;
+  roomCode=r.code;
+ });
+}
+function startGame(){socket.emit("startGame")}
+function move(dx,dy){
+ if(!me)return;
+ socket.emit("move",{x:me.x+dx,y:me.y+dy});
+}
+function doTask(){socket.emit("task")}
+function meeting(){socket.emit("meeting")}
+function resetGame(){socket.emit("reset")}
+function kill(id){socket.emit("kill",id)}
+function vote(id){socket.emit("vote",id)}
+function renderVotes(){
+ $("votes").innerHTML="";
+ if(!state||state.phase!=="meeting")return;
+ state.players.filter(p=>p.alive).forEach(p=>{
+  if(p.id===myId)return;
+  let b=document.createElement("button");
+  b.textContent="🗳️ "+p.name;
+  b.onclick=()=>vote(p.id);
+  $("votes").appendChild(b);
+ });
+ let skip=document.createElement("button");
+ skip.textContent="건너뛰기";
+ skip.onclick=()=>vote("skip");
+ $("votes").appendChild(skip);
+}
+function draw(){
+ const c=$("canvas"),ctx=c.getContext("2d");
+ ctx.clearRect(0,0,c.width,c.height);
+ ctx.fillStyle="#172a40";
+ ctx.fillRect(0,0,c.width,c.height);
+ for(let i=0;i<55;i++){
+  ctx.fillStyle="#a6c8ed";
+  ctx.fillRect((i*97)%600,(i*53)%400,2,2);
+ }
+ if(!state)return;
+ state.players.forEach(p=>{
+  ctx.fillStyle=p.alive?(p.id===myId?"#54e4ff":"#ff687d"):"#777";
+  ctx.beginPath();
+  ctx.roundRect(p.x-12,p.y-12,24,26,9);
+  ctx.fill();
+  ctx.fillStyle="#b9f5ff";
+  ctx.fillRect(p.x-7,p.y-7,14,7);
+  ctx.fillStyle="white";
+  ctx.font="12px sans-serif";
+  ctx.textAlign="center";
+  ctx.fillText(p.name,p.x,p.y+30);
+ });
+}
+</script>
+</body>
+</html>
